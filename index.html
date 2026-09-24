@@ -23,28 +23,43 @@
         <div id="layerTree" class="layer-tree"></div>
       </aside>
 
-      <div class="viewcube-wrap" aria-label="View cube">
-        <div class="cube-arrow arrow-up" data-cube-action="up">▲</div>
-        <div class="cube-arrow arrow-down" data-cube-action="down">▼</div>
-        <div class="cube-arrow arrow-left" data-cube-action="left">◀</div>
-        <div class="cube-arrow arrow-right" data-cube-action="right">▶</div>
-        <div class="roll-arrow roll-ccw" data-cube-action="rollCCW">↺</div>
-        <div class="roll-arrow roll-cw" data-cube-action="rollCW">↻</div>
-        <div id="viewCube" class="view-cube" role="group" aria-label="Orientation cube">
-          <button class="cube-face front" data-view="front">FRONT</button>
-          <button class="cube-face back" data-view="back">BACK</button>
-          <button class="cube-face right" data-view="right">RIGHT</button>
-          <button class="cube-face left" data-view="left">LEFT</button>
-          <button class="cube-face top" data-view="top">TOP</button>
-          <button class="cube-face bottom" data-view="bottom">BOTTOM</button>
-          <button class="cube-edge edge-top-front" data-view="top-front" aria-label="Top front edge"></button>
-          <button class="cube-edge edge-bottom-front" data-view="bottom-front" aria-label="Bottom front edge"></button>
-          <button class="cube-edge edge-front-right" data-view="front-right" aria-label="Front right edge"></button>
-          <button class="cube-edge edge-front-left" data-view="front-left" aria-label="Front left edge"></button>
-          <button class="cube-corner corner-top-front-right" data-view="top-front-right" aria-label="Top front right corner"></button>
-          <button class="cube-corner corner-top-front-left" data-view="top-front-left" aria-label="Top front left corner"></button>
-          <button class="cube-corner corner-bottom-front-right" data-view="bottom-front-right" aria-label="Bottom front right corner"></button>
-          <button class="cube-corner corner-bottom-front-left" data-view="bottom-front-left" aria-label="Bottom front left corner"></button>
+      <div class="viewcube-wrap" aria-label="View cube controls">
+        <button class="cube-arrow arrow-up" data-cube-action="up" aria-label="Orbit cube up">▲</button>
+        <button class="cube-arrow arrow-down" data-cube-action="down" aria-label="Orbit cube down">▼</button>
+        <button class="cube-arrow arrow-left" data-cube-action="left" aria-label="Orbit cube left">◀</button>
+        <button class="cube-arrow arrow-right" data-cube-action="right" aria-label="Orbit cube right">▶</button>
+        <button class="roll-arrow roll-ccw" data-cube-action="rollCCW" aria-label="Roll counter-clockwise">↺</button>
+        <button class="roll-arrow roll-cw" data-cube-action="rollCW" aria-label="Roll clockwise">↻</button>
+
+        <div class="cube-stage">
+          <div id="viewCube" class="view-cube" role="group" aria-label="Orientation cube">
+            <button class="cube-face front" data-view="front">FRONT</button>
+            <button class="cube-face back" data-view="back">BACK</button>
+            <button class="cube-face right" data-view="right">RIGHT</button>
+            <button class="cube-face left" data-view="left">LEFT</button>
+            <button class="cube-face top" data-view="top">TOP</button>
+            <button class="cube-face bottom" data-view="bottom">BOTTOM</button>
+
+            <button class="cube-edge edge-top-front" data-view="top-front" aria-label="Top front edge"></button>
+            <button class="cube-edge edge-top-back" data-view="top-back" aria-label="Top back edge"></button>
+            <button class="cube-edge edge-bottom-front" data-view="bottom-front" aria-label="Bottom front edge"></button>
+            <button class="cube-edge edge-bottom-back" data-view="bottom-back" aria-label="Bottom back edge"></button>
+            <button class="cube-edge edge-front-right" data-view="front-right" aria-label="Front right edge"></button>
+            <button class="cube-edge edge-front-left" data-view="front-left" aria-label="Front left edge"></button>
+            <button class="cube-edge edge-back-right" data-view="back-right" aria-label="Back right edge"></button>
+            <button class="cube-edge edge-back-left" data-view="back-left" aria-label="Back left edge"></button>
+            <button class="cube-edge edge-top-right" data-view="top-front-right" aria-label="Top right corner edge"></button>
+            <button class="cube-edge edge-top-left" data-view="top-front-left" aria-label="Top left corner edge"></button>
+
+            <button class="cube-corner corner-top-front-right" data-view="top-front-right" aria-label="Top front right corner"></button>
+            <button class="cube-corner corner-top-front-left" data-view="top-front-left" aria-label="Top front left corner"></button>
+            <button class="cube-corner corner-top-back-right" data-view="top-back-right" aria-label="Top back right corner"></button>
+            <button class="cube-corner corner-top-back-left" data-view="top-back-left" aria-label="Top back left corner"></button>
+            <button class="cube-corner corner-bottom-front-right" data-view="bottom-front-right" aria-label="Bottom front right corner"></button>
+            <button class="cube-corner corner-bottom-front-left" data-view="bottom-front-left" aria-label="Bottom front left corner"></button>
+            <button class="cube-corner corner-bottom-back-right" data-view="bottom-back-right" aria-label="Bottom back right corner"></button>
+            <button class="cube-corner corner-bottom-back-left" data-view="bottom-back-left" aria-label="Bottom back left corner"></button>
+          </div>
         </div>
       </div>
 
