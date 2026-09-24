@@ -4,25 +4,26 @@ import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/
 import { RoomEnvironment } from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/environments/RoomEnvironment.js';
 
 const DEG = Math.PI / 180;
+const REDUCED = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 export class CadViewer {
-  constructor(container, options = {}) {
+  constructor(container) {
     this.container = container;
     this.canvas = container.querySelector('canvas');
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xdfe2e6);
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.001, 100000);
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    this.pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = this.pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.pmrem.dispose();
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
 
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = true;
@@ -32,25 +33,26 @@ export class CadViewer {
     this.controls.enableRotate = true;
     this.controls.enableZoom = true;
     this.controls.zoomToCursor = true;
-    this.controls.rotateSpeed = 0.85;
-    this.controls.panSpeed = 0.75;
+    this.controls.rotateSpeed = 0.72;
+    this.controls.panSpeed = 0.8;
     this.controls.zoomSpeed = 0.9;
-    this.controls.minDistance = 0.01;
-    this.controls.maxDistance = 100000;
     this.controls.minPolarAngle = 0;
     this.controls.maxPolarAngle = Math.PI;
+    this.controls.minDistance = 0.01;
+    this.controls.maxDistance = 100000;
     this.controls.target.set(0, 0, 0);
 
     this.model = null;
     this.modelCenter = new THREE.Vector3();
     this.modelRadius = 1;
+    this.layerNodes = new Map();
+    this.loader = new GLTFLoader();
     this.visible = true;
     this.renderQueued = false;
-    this.animation = null;
+    this.animationFrame = 0;
+    this.tween = null;
     this.disposed = false;
     this.interactive = true;
-    this.loader = new GLTFLoader();
-    this.layerNodes = new Map();
 
     this.ui = {
       cube: container.querySelector('#viewCube'),
@@ -76,33 +78,29 @@ export class CadViewer {
     }, { threshold: 0.01 });
     this.intersectionObserver.observe(container);
 
-    this.canvas.addEventListener('webglcontextlost', event => {
-      event.preventDefault();
+    this.canvas.addEventListener('webglcontextlost', e => {
+      e.preventDefault();
       this.ui.loading.hidden = false;
       this.ui.loadingText.textContent = 'Graphics context paused…';
     });
     this.canvas.addEventListener('webglcontextrestored', () => {
-      this.ui.loadingText.textContent = 'Restoring model…';
+      const url = this.model?.userData?.sourceUrl;
       this.rebuildEnvironment();
-      if (this.model?.userData?.sourceUrl) this.load(this.model.userData.sourceUrl);
-      else this.ui.loading.hidden = true;
+      if (url) this.load(url); else this.ui.loading.hidden = true;
     });
 
-    this.controls.addEventListener('change', () => {
-      this.syncCube();
-      this.requestRender();
+    this.controls.addEventListener('change', () => this.requestRender());
+    this.controls.addEventListener('start', () => {
+      this.cancelTween();
+      this.canvas.style.cursor = 'grabbing';
     });
-
-    this.controls.addEventListener('start', () => { this.canvas.style.cursor = 'grabbing'; });
     this.controls.addEventListener('end', () => { this.canvas.style.cursor = 'grab'; });
     this.canvas.style.cursor = 'grab';
     this.resize();
   }
 
   rebuildEnvironment() {
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
@@ -110,30 +108,27 @@ export class CadViewer {
   }
 
   bindUI() {
-    this.ui.filter.addEventListener('click', e => { e.stopPropagation(); this.toggleLayers(); });
+    this.ui.filter?.addEventListener('click', e => { e.stopPropagation(); this.toggleLayers(); });
+    this.ui.home?.addEventListener('click', e => { e.stopPropagation(); this.goHome(); });
+    this.ui.fullscreen?.addEventListener('click', e => { e.stopPropagation(); this.toggleFullscreen(); });
+    this.ui.activate?.addEventListener('click', e => { e.stopPropagation(); this.setInteractive(true); });
+    this.ui.shield?.addEventListener('click', () => this.setInteractive(true));
     containerButton(this.container, '#closeFilter', () => this.toggleLayers(false));
     containerButton(this.container, '#showAllButton', () => this.showAll());
     containerButton(this.container, '#isolateButton', () => this.isolateSelected());
-    this.ui.home.addEventListener('click', e => { e.stopPropagation(); this.goHome(); });
-    this.ui.fullscreen.addEventListener('click', e => { e.stopPropagation(); this.toggleFullscreen(); });
-    this.ui.activate.addEventListener('click', () => this.setInteractive(true));
-    this.ui.shield.addEventListener('click', () => this.setInteractive(true));
 
     this.container.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', e => {
-      e.stopPropagation();
-      this.setView(el.dataset.view);
+      e.preventDefault(); e.stopPropagation(); this.setView(el.dataset.view);
     }));
     this.container.querySelectorAll('[data-cube-action]').forEach(el => el.addEventListener('click', e => {
-      e.stopPropagation();
-      this.cubeAction(el.dataset.cubeAction);
+      e.preventDefault(); e.stopPropagation(); this.cubeAction(el.dataset.cubeAction);
     }));
 
     document.addEventListener('fullscreenchange', () => {
       const active = document.fullscreenElement === this.container;
-      this.ui.fullscreen.textContent = active ? 'Exit full screen' : 'Full screen';
+      if (this.ui.fullscreen) this.ui.fullscreen.textContent = active ? 'Exit full screen' : 'Full screen';
       requestAnimationFrame(() => this.resize());
     });
-
     this.container.addEventListener('keydown', e => this.keyboard(e));
     this.container.tabIndex = 0;
   }
@@ -141,25 +136,22 @@ export class CadViewer {
   setInteractive(active) {
     this.interactive = active;
     this.controls.enabled = active;
-    this.ui.shield.classList.toggle('active', !active);
-    this.ui.activate.style.display = active ? 'none' : 'block';
-    this.ui.activate.textContent = 'Click to interact';
+    this.ui.shield?.classList.toggle('active', !active);
+    if (this.ui.activate) this.ui.activate.style.display = active ? 'none' : 'block';
   }
 
   toggleLayers(force) {
     const open = force === undefined ? !this.ui.layerPanel.classList.contains('open') : force;
     this.ui.layerPanel.classList.toggle('open', open);
     this.ui.layerPanel.setAttribute('aria-hidden', String(!open));
-    this.ui.filter.setAttribute('aria-expanded', String(open));
+    this.ui.filter?.setAttribute('aria-expanded', String(open));
   }
 
   async toggleFullscreen() {
     try {
       if (document.fullscreenElement === this.container) await document.exitFullscreen();
-      else if (this.container.requestFullscreen) await this.container.requestFullscreen();
-    } catch (error) {
-      console.warn('Fullscreen unavailable', error);
-    }
+      else await this.container.requestFullscreen?.();
+    } catch (error) { console.warn('Fullscreen unavailable', error); }
   }
 
   resize() {
@@ -180,12 +172,13 @@ export class CadViewer {
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
       this.syncCube();
-      if (this.animation) this.requestRender();
+      if (this.tween) this.requestRender();
     });
   }
 
   async load(url) {
     this.disposeModel();
+    this.cancelTween();
     this.ui.error.hidden = true;
     this.ui.loading.hidden = false;
     this.ui.loadingText.textContent = 'Loading model…';
@@ -207,14 +200,12 @@ export class CadViewer {
           const pct = Math.round(progress.loaded / progress.total * 100);
           this.ui.loadingProgress.style.width = `${pct}%`;
           this.ui.loadingText.textContent = `Loading model… ${pct}%`;
-        } else {
-          this.ui.loadingText.textContent = `Loading model… ${Math.round(progress.loaded / 1024 / 1024)} MB`;
-        }
+        } else this.ui.loadingText.textContent = `Loading model… ${Math.round(progress.loaded / 1024 / 1024)} MB`;
       }, error => {
         console.error(error);
         this.ui.loading.hidden = true;
         this.ui.error.hidden = false;
-        this.ui.error.innerHTML = `<strong>Unable to load the CAD model.</strong><br><br><button id="retryModel">Retry</button>`;
+        this.ui.error.innerHTML = '<strong>Unable to load the CAD model.</strong><br><br><button id="retryModel">Retry</button>';
         this.ui.error.querySelector('#retryModel').onclick = () => this.load(url);
         reject(error);
       });
@@ -230,19 +221,8 @@ export class CadViewer {
       node.castShadow = true;
       node.receiveShadow = true;
       node.frustumCulled = true;
-      if (node.material) {
-        const materials = Array.isArray(node.material) ? node.material : [node.material];
-        materials.forEach(mat => {
-          if ('roughness' in mat && mat.roughness === undefined) mat.roughness = 0.38;
-          if ('metalness' in mat && mat.metalness === undefined) mat.metalness = 0.12;
-        });
-      }
     });
-    // Keep the source CAD orientation intact. Only normalize extreme units.
-    if (maxDim > 100000 || maxDim < 0.0001) {
-      const scale = 10 / maxDim;
-      root.scale.setScalar(scale);
-    }
+    if (maxDim > 100000 || maxDim < 0.0001) root.scale.setScalar(10 / maxDim);
   }
 
   disposeModel() {
@@ -254,9 +234,7 @@ export class CadViewer {
       const mats = Array.isArray(node.material) ? node.material : [node.material];
       mats.forEach(mat => {
         if (!mat) return;
-        for (const key of ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap']) {
-          if (mat[key]?.dispose) mat[key].dispose();
-        }
+        for (const key of ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap']) mat[key]?.dispose?.();
         mat.dispose?.();
       });
     });
@@ -272,10 +250,11 @@ export class CadViewer {
     this.modelRadius = Math.max(size.length() * 0.5, 0.01);
     this.controls.target.copy(center);
     const distance = this.modelRadius * 2.15;
-    // Initial presentation is top/front/right rather than an arbitrary distant camera.
     this.camera.position.copy(center).add(new THREE.Vector3(distance * 0.72, distance * 0.76, distance * 0.72));
+    this.camera.up.set(0, 1, 0);
     this.camera.near = Math.max(this.modelRadius / 10000, 0.00001);
     this.camera.far = Math.max(this.modelRadius * 1000, 100);
+    this.camera.lookAt(center);
     this.camera.updateProjectionMatrix();
     this.controls.minDistance = Math.max(this.modelRadius * 0.08, 0.0001);
     this.controls.maxDistance = Math.max(this.modelRadius * 100, 100);
@@ -283,146 +262,147 @@ export class CadViewer {
     this.syncCube();
   }
 
-  goHome() {
-    if (!this.model) return;
-    this.animateToDirection(new THREE.Vector3(1, 1, 1).normalize(), new THREE.Vector3(0, 1, 0));
-    this.animateTarget(this.modelCenter);
-  }
+  goHome() { this.navigateToDirection(new THREE.Vector3(1, 1, 1).normalize(), new THREE.Vector3(0, 1, 0)); }
 
   setView(view) {
-    if (!this.model) return;
-    const d = {
-      front:[new THREE.Vector3(0,0,-1),new THREE.Vector3(0,1,0)],
-      back:[new THREE.Vector3(0,0,1),new THREE.Vector3(0,1,0)],
-      top:[new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,-1)],
-      bottom:[new THREE.Vector3(0,-1,0),new THREE.Vector3(0,0,1)],
-      right:[new THREE.Vector3(1,0,0),new THREE.Vector3(0,1,0)],
-      left:[new THREE.Vector3(-1,0,0),new THREE.Vector3(0,1,0)],
-      'top-front':[new THREE.Vector3(0,1,-1).normalize(),new THREE.Vector3(0,1,0)],
-      'bottom-front':[new THREE.Vector3(0,-1,-1).normalize(),new THREE.Vector3(0,1,0)],
-      'front-right':[new THREE.Vector3(1,0,-1).normalize(),new THREE.Vector3(0,1,0)],
-      'front-left':[new THREE.Vector3(-1,0,-1).normalize(),new THREE.Vector3(0,1,0)],
-      'top-front-right':[new THREE.Vector3(1,1,-1).normalize(),new THREE.Vector3(0,1,0)],
-      'top-front-left':[new THREE.Vector3(-1,1,-1).normalize(),new THREE.Vector3(0,1,0)],
-      'bottom-front-right':[new THREE.Vector3(1,-1,-1).normalize(),new THREE.Vector3(0,1,0)],
-      'bottom-front-left':[new THREE.Vector3(-1,-1,-1).normalize(),new THREE.Vector3(0,1,0)]
+    const views = {
+      front:[0,0,-1,0,1,0], back:[0,0,1,0,1,0], right:[1,0,0,0,1,0], left:[-1,0,0,0,1,0],
+      top:[0,1,0,0,0,-1], bottom:[0,-1,0,0,0,1],
+      'top-front':[0,1,-1,0,1,0], 'bottom-front':[0,-1,-1,0,1,0],
+      'front-right':[1,0,-1,0,1,0], 'front-left':[-1,0,-1,0,1,0],
+      'back-right':[1,0,1,0,1,0], 'back-left':[-1,0,1,0,1,0],
+      'top-back':[0,1,1,0,1,0], 'bottom-back':[0,-1,1,0,1,0],
+      'top-front-right':[1,1,-1,0,1,0], 'top-front-left':[-1,1,-1,0,1,0],
+      'top-back-right':[1,1,1,0,1,0], 'top-back-left':[-1,1,1,0,1,0],
+      'bottom-front-right':[1,-1,-1,0,1,0], 'bottom-front-left':[-1,-1,-1,0,1,0],
+      'bottom-back-right':[1,-1,1,0,1,0], 'bottom-back-left':[-1,-1,1,0,1,0]
     }[view];
-    if (!d) return;
-    this.animateToDirection(d[0], d[1]);
+    if (!views || !this.model) return;
+    this.navigateToDirection(new THREE.Vector3(views[0],views[1],views[2]).normalize(), new THREE.Vector3(views[3],views[4],views[5]));
   }
 
-  animateTarget(target) {
-    const start = this.controls.target.clone();
-    const end = target.clone();
-    const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 450;
-    this.startTween(duration, t => this.controls.target.lerpVectors(start, end, t));
-  }
-
-  animateToDirection(direction, up) {
-    const target = this.controls.target.clone();
+  navigateToDirection(direction, up) {
+    this.cancelTween();
+    const target = this.modelCenter.clone();
     const distance = Math.max(this.controls.getDistance(), this.modelRadius * 2.15);
     const startPos = this.camera.position.clone();
     const endPos = target.clone().add(direction.clone().normalize().multiplyScalar(distance));
-    const startQuat = this.camera.quaternion.clone();
-    const dummy = new THREE.Object3D();
-    dummy.position.copy(endPos); dummy.up.copy(up); dummy.lookAt(target);
-    const endQuat = dummy.quaternion.clone();
-    const startUp = this.camera.up.clone();
-    const endUp = up.clone().normalize();
-    const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 500;
-    this.startTween(duration, t => {
-      const eased = 1 - Math.pow(1 - t, 3);
-      this.camera.position.lerpVectors(startPos, endPos, eased);
-      this.camera.quaternion.slerpQuaternions(startQuat, endQuat, eased);
-      this.camera.up.lerpVectors(startUp, endUp, eased).normalize();
-      this.camera.lookAt(target);
+    const startTarget = this.controls.target.clone();
+    const duration = REDUCED() ? 1 : 500;
+    const start = performance.now();
+    this.tween = now => {
+      const raw = Math.min(1, (now - start) / duration);
+      const t = raw < 1 ? 1 - Math.pow(1 - raw, 3) : 1;
+      this.controls.target.lerpVectors(startTarget, target, t);
+      this.camera.position.lerpVectors(startPos, endPos, t);
+      this.camera.up.copy(up).normalize();
+      this.camera.lookAt(this.controls.target);
       this.controls.update();
-    });
+      if (raw >= 1) {
+        this.tween = null;
+        this.camera.up.copy(up).normalize();
+        this.camera.lookAt(this.controls.target);
+        this.controls.update();
+      }
+    };
+    this.animateTween();
   }
 
-  startTween(duration, step) {
-    const start = performance.now();
-    this.animation = true;
-    const tick = now => {
-      if (!this.animation) return;
-      const t = Math.min(1, (now - start) / duration);
-      step(t);
-      this.requestRender();
-      if (t >= 1) { this.animation = null; this.controls.update(); this.requestRender(); return; }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+  animateTween() {
+    if (!this.tween || this.disposed) return;
+    this.tween(performance.now());
+    this.requestRender();
+    if (this.tween) this.animationFrame = requestAnimationFrame(() => this.animateTween());
+  }
+
+  cancelTween() {
+    if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+    this.animationFrame = 0;
+    this.tween = null;
   }
 
   cubeAction(action) {
-    const step = 25 * DEG;
-    if (action === 'left') this.rotateAroundTarget(step, 0);
-    if (action === 'right') this.rotateAroundTarget(-step, 0);
-    if (action === 'up') this.rotateAroundTarget(0, step);
-    if (action === 'down') this.rotateAroundTarget(0, -step);
-    if (action === 'rollCCW') this.rollCamera(step);
-    if (action === 'rollCW') this.rollCamera(-step);
+    if (action === 'left') this.stepView(-1, 0);
+    else if (action === 'right') this.stepView(1, 0);
+    else if (action === 'up') this.stepView(0, 1);
+    else if (action === 'down') this.stepView(0, -1);
+    else if (action === 'rollCCW') this.rollCamera(Math.PI / 2);
+    else if (action === 'rollCW') this.rollCamera(-Math.PI / 2);
   }
 
-  rotateAroundTarget(azimuth, polar) {
-    const offset = this.camera.position.clone().sub(this.controls.target);
+  stepView(horizontal, vertical) {
+    const target = this.controls.target.clone();
+    const offset = this.camera.position.clone().sub(target);
     const spherical = new THREE.Spherical().setFromVector3(offset);
-    spherical.theta += azimuth;
-    spherical.phi = THREE.MathUtils.clamp(spherical.phi + polar, 0.0001, Math.PI - 0.0001);
-    const targetPos = new THREE.Vector3().setFromSpherical(spherical).add(this.controls.target);
-    const direction = targetPos.clone().sub(this.controls.target).normalize();
-    this.animateToDirection(direction, new THREE.Vector3(0,1,0));
+    spherical.theta += horizontal * 45 * DEG;
+    spherical.phi = THREE.MathUtils.clamp(spherical.phi - vertical * 45 * DEG, 0.0005, Math.PI - 0.0005);
+    const next = new THREE.Vector3().setFromSpherical(spherical).normalize();
+    this.navigateToDirection(next, new THREE.Vector3(0, 1, 0));
   }
 
   rollCamera(angle) {
-    const start = this.camera.quaternion.clone();
-    const axis = this.camera.getWorldDirection(new THREE.Vector3()).normalize();
-    const q = new THREE.Quaternion().setFromAxisAngle(axis, angle);
-    const end = q.multiply(start.clone());
-    const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 300;
-    this.startTween(duration, t => this.camera.quaternion.slerpQuaternions(start, end, t));
+    this.cancelTween();
+    const startUp = this.camera.up.clone();
+    const direction = this.camera.getWorldDirection(new THREE.Vector3()).normalize();
+    const q = new THREE.Quaternion().setFromAxisAngle(direction, angle);
+    const endUp = startUp.clone().applyQuaternion(q).normalize();
+    const start = performance.now();
+    const duration = REDUCED() ? 1 : 350;
+    this.tween = now => {
+      const raw = Math.min(1, (now - start) / duration);
+      const t = 1 - Math.pow(1 - raw, 3);
+      this.camera.up.lerpVectors(startUp, endUp, t).normalize();
+      this.camera.lookAt(this.controls.target);
+      this.controls.update();
+      if (raw >= 1) this.tween = null;
+    };
+    this.animateTween();
   }
 
   syncCube() {
     if (!this.ui.cube) return;
     const e = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
-    const x = THREE.MathUtils.radToDeg(e.x);
-    const y = THREE.MathUtils.radToDeg(e.y);
-    const z = THREE.MathUtils.radToDeg(e.z);
-    this.ui.cube.style.transform = `perspective(320px) rotateX(${(-x).toFixed(2)}deg) rotateY(${(-y).toFixed(2)}deg) rotateZ(${(-z).toFixed(2)}deg)`;
+    const rx = THREE.MathUtils.radToDeg(e.x);
+    const ry = THREE.MathUtils.radToDeg(e.y);
+    const rz = THREE.MathUtils.radToDeg(e.z);
+    this.ui.cube.style.transform = `rotateX(${(-rx).toFixed(2)}deg) rotateY(${(-ry).toFixed(2)}deg) rotateZ(${(-rz).toFixed(2)}deg)`;
   }
 
   buildLayers() {
     this.ui.layerTree.replaceChildren();
     this.layerNodes.clear();
     if (!this.model) return;
-    const build = (node, parent) => {
-      const meaningful = node.isMesh || node.children.length > 0;
-      if (!meaningful) return;
+    const build = (node, parent, depth = 0) => {
+      if (!node.isMesh && node.children.length === 0) return;
       const row = document.createElement('div');
       row.className = 'layer-row';
-      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = node.visible;
-      const label = document.createElement('label'); label.textContent = node.name || `${node.type} ${node.id}`;
+      row.style.paddingLeft = `${4 + depth * 14}px`;
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = node.visible;
+      const label = document.createElement('label');
+      label.textContent = node.name || `${node.type} ${node.id}`;
       checkbox.addEventListener('change', () => { node.visible = checkbox.checked; this.requestRender(); });
-      row.append(checkbox,label); parent.append(row);
-      this.layerNodes.set(node.uuid, {node, checkbox, row});
-      if (node.children.length) {
-        const children = document.createElement('div'); children.className = 'layer-indent'; parent.append(children);
-        node.children.forEach(child => build(child, children));
-      }
+      row.append(checkbox, label);
+      parent.append(row);
+      this.layerNodes.set(node.uuid, { node, checkbox, row });
+      node.children.forEach(child => build(child, parent, depth + 1));
     };
     build(this.model, this.ui.layerTree);
   }
 
   showAll() {
-    this.layerNodes.forEach(({node, checkbox}) => { node.visible = true; checkbox.checked = true; });
+    this.layerNodes.forEach(({ node, checkbox }) => { node.visible = true; checkbox.checked = true; });
     this.requestRender();
   }
 
   isolateSelected() {
     const selected = [...this.layerNodes.values()].filter(x => x.checkbox.checked && x.node !== this.model).map(x => x.node);
     if (!selected.length) return;
-    this.model.traverse(node => { if (node.isMesh) node.visible = selected.some(s => s === node || s.getObjectById(node.id)); });
+    this.model.traverse(node => {
+      if (!node.isMesh) return;
+      node.visible = selected.some(parent => parent === node || parent.getObjectById(node.id));
+    });
     this.buildLayers();
     this.requestRender();
   }
@@ -436,6 +416,7 @@ export class CadViewer {
 
   dispose() {
     this.disposed = true;
+    this.cancelTween();
     this.intersectionObserver?.disconnect();
     this.resizeObserver?.disconnect();
     this.controls.dispose();
