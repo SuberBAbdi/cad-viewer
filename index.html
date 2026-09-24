@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>DAC CAD Viewer</title>
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <main class="viewer-shell" id="viewerShell">
+    <div id="cadViewer" class="cad-viewer" aria-label="Interactive CAD viewer">
+      <canvas id="cadCanvas"></canvas>
+
+      <div class="viewer-toolbar" aria-label="Viewer controls">
+        <button id="filterButton" class="tool-button" type="button" aria-expanded="false">Filter</button>
+        <button id="homeButton" class="tool-button icon-button" type="button" aria-label="Home / fit model">⌂</button>
+        <button id="fullscreenButton" class="tool-button" type="button" aria-label="Enter fullscreen">Full screen</button>
+      </div>
+
+      <aside id="layerPanel" class="layer-panel" aria-hidden="true">
+        <div class="panel-heading"><strong>Model layers</strong><button id="closeFilter" type="button" aria-label="Close layers">×</button></div>
+        <div class="layer-actions"><button id="showAllButton" type="button">Show all</button><button id="isolateButton" type="button">Isolate selected</button></div>
+        <div id="layerTree" class="layer-tree"></div>
+      </aside>
+
+      <div class="viewcube-wrap" aria-label="View cube">
+        <div class="cube-arrow arrow-up" data-cube-action="up">▲</div>
+        <div class="cube-arrow arrow-down" data-cube-action="down">▼</div>
+        <div class="cube-arrow arrow-left" data-cube-action="left">◀</div>
+        <div class="cube-arrow arrow-right" data-cube-action="right">▶</div>
+        <div class="roll-arrow roll-ccw" data-cube-action="rollCCW">↺</div>
+        <div class="roll-arrow roll-cw" data-cube-action="rollCW">↻</div>
+        <div id="viewCube" class="view-cube" role="group" aria-label="Orientation cube">
+          <button class="cube-face front" data-view="front">FRONT</button>
+          <button class="cube-face back" data-view="back">BACK</button>
+          <button class="cube-face right" data-view="right">RIGHT</button>
+          <button class="cube-face left" data-view="left">LEFT</button>
+          <button class="cube-face top" data-view="top">TOP</button>
+          <button class="cube-face bottom" data-view="bottom">BOTTOM</button>
+          <button class="cube-edge edge-top-front" data-view="top-front" aria-label="Top front edge"></button>
+          <button class="cube-edge edge-bottom-front" data-view="bottom-front" aria-label="Bottom front edge"></button>
+          <button class="cube-edge edge-front-right" data-view="front-right" aria-label="Front right edge"></button>
+          <button class="cube-edge edge-front-left" data-view="front-left" aria-label="Front left edge"></button>
+          <button class="cube-corner corner-top-front-right" data-view="top-front-right" aria-label="Top front right corner"></button>
+          <button class="cube-corner corner-top-front-left" data-view="top-front-left" aria-label="Top front left corner"></button>
+          <button class="cube-corner corner-bottom-front-right" data-view="bottom-front-right" aria-label="Bottom front right corner"></button>
+          <button class="cube-corner corner-bottom-front-left" data-view="bottom-front-left" aria-label="Bottom front left corner"></button>
+        </div>
+      </div>
+
+      <button id="activateButton" class="interaction-hint" type="button">Click to interact</button>
+      <div id="interactionShield" class="interaction-shield" aria-hidden="true"></div>
+      <div id="loading" class="loading" hidden><div class="loading-bar"><span id="loadingProgress"></span></div><span id="loadingText">Loading model…</span></div>
+      <div id="error" class="error" hidden></div>
+    </div>
+  </main>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
