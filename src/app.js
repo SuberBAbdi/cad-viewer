@@ -10,19 +10,22 @@ const MODELS = {
 const root = document.getElementById('cadViewer');
 const viewer = new CadViewer(root);
 
-viewer.load(MODELS.assembly).then(() => {
-  // Deliberately begin looking straight at the model's top, with no arbitrary
-  // diagonal camera orientation. All later navigation is handled by the viewer.
-  viewer.setView('top');
-}).catch(() => {});
+viewer.load(MODELS.assembly)
+  .then(() => viewer.setView('top'))
+  .catch(() => {});
 
-// Canvas interaction is opt-in so normal page scrolling is never hijacked.
-// The black shield sits only over the render surface; toolbar, layer panel and
-// orientation controls remain above it and remain usable.
+// Normal page scrolling remains the default. The viewer is activated only
+// when the user explicitly presses "Click to interact" or the black shield.
 viewer.setInteractive(false);
 
 document.addEventListener('pointerdown', event => {
-  if (viewer.interactive && !root.contains(event.target)) viewer.setInteractive(false);
+  if (viewer.interactive && !root.contains(event.target)) {
+    viewer.setInteractive(false);
+  }
 });
 
 window.addEventListener('pagehide', () => viewer.dispose(), { once: true });
+
+// Expose the model URLs for simple integration/testing without creating any
+// additional global viewer state.
+window.CAD_MODELS = Object.freeze(MODELS);
